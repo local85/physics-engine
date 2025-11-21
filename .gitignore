@@ -1,0 +1,23 @@
+# build artifacts
+/build/
+/build-*/
+*.o
+*.obj
+*.exe
+*.out
+
+# vcpkg and other local deps
+/vcpkg/
+/installed/
+/Downloads/
+/glm/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+*.code-workspace
+
+# user-specific
+*.log
