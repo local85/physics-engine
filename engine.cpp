@@ -3,6 +3,7 @@
 #include <cmath>
 #include <glm/glm.hpp>
 #include <GLFW/glfw3.h>
+#include <chrono>
 using namespace std;
 using namespace glm;
 
@@ -16,6 +17,14 @@ const float GRAVITY = 9.81f;
 // Callback for handling window resize
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
+
+    // Update projection matrix to match new aspect ratio
+    float aspectRatio = (float)width / (float)height;
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(-aspectRatio, aspectRatio, -1.0, 1.0, -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
 }
 
 // Process input
@@ -27,7 +36,13 @@ void processInput(GLFWwindow* window) {
 // physics object base class
 class Object {
     public:
-        Object(float m) : mass(m) {}
+        Object(float m, const vector<float>& pos, const vector<float>& vel) : 
+            mass(m), position(pos), velocity(vel) {}
+
+        virtual void draw() = 0;
+        virtual void render() = 0;
+        virtual void update(float deltaTime) = 0;
+
 
     protected:
         // position getters and setters
@@ -67,16 +82,16 @@ class Object {
     private:
         float mass;
         // position is the center of the object
-        vector<float> position = {1.0f, 1.0f};
-        vector<float> velocity = {0.0f, 0.0f};
+        vector<float> position;
+        vector<float> velocity;
 };
 
 // circle class derived from Object
 class Circle : public Object {
     public:
-        Circle(float m) : Object(m) {}
+        Circle(float m, const vector<float>& pos, const vector<float>& vel) : Object(m, pos, vel) {}
         // draw the circle using triangle fan + trig
-        void draw() {
+        void draw() override {
             glBegin(GL_TRIANGLE_FAN);
             glVertex2d(getPositionX(), getPositionY());
 
@@ -91,15 +106,34 @@ class Circle : public Object {
         }
 
         // render the circle
-        void render() {
+        void render() override {
             // draw circle
             draw();
+        }
 
-            // update position + velocity
-            setPositionX(getPositionX() + getVelocityX());
-            setPositionY(getPositionY() + getVelocityY());
-            setVelocityY(getVelocityY() - GRAVITY * 0.0000005f);
+        // update physics based on delta time
+        void update(float deltaTime) override{
+            // update position based on velocity
+            setPositionX(getPositionX() + getVelocityX() * deltaTime);
+            setPositionY(getPositionY() + getVelocityY() * deltaTime);
 
+            // apply gravity acceleration to velocity
+            setVelocityY(getVelocityY() - GRAVITY * deltaTime);
+
+            // wall collision detection
+            // x direction
+            if (getPositionX() + radius < -1.125 || 
+                getPositionX() + radius > 1.25) {
+                    setPositionX(getPositionX() + (getPositionX() * -0.05));
+                    setVelocityX(getVelocityX() * -0.95);
+                }
+            
+            // y direction
+            if (getPositionY() + radius < -0.875 || 
+                getPositionY() + radius > 0.75) {
+                    setPositionY(getPositionY() + (getPositionY() * -0.05));
+                    setVelocityY(getVelocityY() * -0.95);
+                }
         }
 
     private:
@@ -129,25 +163,48 @@ int main() {
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
+    // Get actual framebuffer size (important for Retina displays)
+    int fbWidth, fbHeight;
+    glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+
     // Set up viewport
-    glViewport(0, 0, WIDTH, HEIGHT);
+    glViewport(0, 0, fbWidth, fbHeight);
 
     // Set up orthographic projection matching window aspect ratio
-    float aspectRatio = (float)WIDTH / (float)HEIGHT;  // 800/600 = 1.333 (4:3)
+    float aspectRatio = (float)fbWidth / (float)fbHeight;
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(-aspectRatio, aspectRatio, -1.0, 1.0, -1.0, 1.0);  // x: [-1.33, 1.33], y: [-1, 1]
+    glOrtho(-aspectRatio, aspectRatio, -1.0, 1.0, -1.0, 1.0);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    // make a circle
-    Circle c(1.0f);
+    // initialize Object list
+    vector<Object*> objects;
+
+    // make some circles
+    objects.push_back(new Circle(1.0f, {0.0f, 1.0f}, {1.0f, 0.0f}));
+    objects.push_back(new Circle(1.0f, {0.25f, -0.75f}, {-1.0f, 1.0f}));
+
+    // Delta time tracking
+    auto lastFrame = chrono::high_resolution_clock::now();
 
     // Main render loop
     while (!glfwWindowShouldClose(window)) {
+        // Calculate delta time
+        auto currentFrame = chrono::high_resolution_clock::now();
+        chrono::duration<float> deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
         glClear(GL_COLOR_BUFFER_BIT);
 
-        c.render();
+        // Reset modelview matrix each frame
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+
+        for (Object* o : objects) {
+            o->render();
+            o->update(deltaTime.count());
+        }
 
         // Swap buffers and poll events
         glfwSwapBuffers(window);
